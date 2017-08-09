@@ -186,7 +186,7 @@ class DeepLabLFOVModel(object):
         raw_output = tf.expand_dims(raw_output, dim=3) # Create 4D-tensor.
         return tf.cast(raw_output, tf.uint8)
    
-    def loss(self, img_batch, label_batch):
+    def loss(self, img_batch, label_batch,step,step_thre):
         """Create the network, run inference on the input batch and compute loss.
         
         Args:
@@ -208,14 +208,12 @@ class DeepLabLFOVModel(object):
         confusion_matrix = tf.contrib.metrics.confusion_matrix(tf.argmax(gt,axis=1),tf.argmax(pred,axis=1),num_classes = 2)
         confusion_matrix = tf.cast(confusion_matrix,tf.float32)
 
-        recall1 = confusion_matrix[0][0]/(confusion_matrix[0][0]+confusion_matrix[0][1])
-        recall2 = confusion_matrix[1][1]/(confusion_matrix[1][0]+confusion_matrix[1][1])
-       
+        #recall1 = confusion_matrix[0][0]/(confusion_matrix[0][0]+confusion_matrix[0][1])
+        recall = confusion_matrix[1][1]/(confusion_matrix[1][0]+confusion_matrix[1][1])
+        precision=confusion_matrix[1][1]/(confusion_matrix[0][1]+confusion_matrix[1][1])
+        '''
         balanced_weight = tf.get_variable('balanced_weight',shape=[2],initializer = tf.constant_initializer(0))
         balanced_weight = tf.nn.softmax(balanced_weight,name = 'softmax_balanced_weight')
-
-        #tf.summary.scalar('balanced_weight_0',balanced_weight[0])
-        #tf.summary.scalar('balanced_weight_1',balanced_weight[1])
 
         count_0 = tf.cast(tf.reduce_sum(gt[:,0]),tf.float32)
         count_1 = tf.cast(tf.reduce_sum(gt[:,1]),tf.float32)
@@ -225,15 +223,19 @@ class DeepLabLFOVModel(object):
 
         tf.summary.scalar('w_0',w_0)
         tf.summary.scalar('w_1',w_1)
+        '''
+        #pt->post
+        w_0 = tf.cond(step<step_thre,lambda:tf.constant(0.5,dtype=tf.float32),lambda:tf.constant(1.0,dtype=tf.float32))
+        w_1 = tf.cond(step<step_thre,lambda:tf.constant(150.0,dtype=tf.float32),lambda:tf.constant(1.0,dtype=tf.float32))
 
         w0_col = tf.multiply(w_0,gt[:,0])
         w1_col = tf.multiply(w_1,gt[:,1])
+
         weight_matrix = tf.stack([w0_col,w1_col],axis = 1)
 
         loss_tmp1 = -tf.multiply(weight_matrix,tf.log(tf.clip_by_value(pred,1e-5,1.0)))
         loss_tmp2 = tf.reduce_sum(loss_tmp1,axis = 1)
-        loss_total = tf.reduce_mean(loss_tmp2)
-        accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(gt,axis=1),tf.argmax(pred,axis=1)),tf.float32))        
+        loss_total = tf.reduce_mean(loss_tmp2)  
         tf.summary.scalar("loss",loss_total)
 
-        return loss_total,recall1,recall2,accuracy
+        return loss_total,recall,precision
